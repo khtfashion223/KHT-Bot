@@ -3,12 +3,15 @@ name: KHT Fashion House Bot
 on:
   workflow_dispatch:
 
+permissions:
+  contents: read
+
 jobs:
   run-bot:
     runs-on: ubuntu-latest
 
     steps:
-      - name: Get source code
+      - name: Checkout repository
         uses: actions/checkout@v4
 
       - name: Set up Python
@@ -16,5 +19,34 @@ jobs:
         with:
           python-version: "3.12"
 
-      - name: Run KHT Bot
-        run: python main.py
+      - name: Check Python syntax
+        run: python -m py_compile main.py
+
+      - name: Test bot data functions
+        run: |
+          python - <<'PY'
+          import os
+          import tempfile
+          import json
+          import main
+
+          with tempfile.TemporaryDirectory() as folder:
+              main.DATA_FILE = os.path.join(folder, "test.json")
+              bot = main.KHTFashionBot()
+              bot.data["products"].append({
+                  "id": 1,
+                  "name": "Test Shirt",
+                  "cost": 5000,
+                  "price": 8000,
+                  "stock": 5
+              })
+              bot.save_data()
+
+              with open(main.DATA_FILE, encoding="utf-8") as f:
+                  data = json.load(f)
+
+              assert data["products"][0]["name"] == "Test Shirt"
+              assert data["products"][0]["price"] == 8000
+
+          print("KHT Bot tests passed!")
+          PY
