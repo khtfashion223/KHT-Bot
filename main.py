@@ -1,26 +1,51 @@
-# KHT AI BOT
-# Version 1.0
+# KHT FASHION HOUSE BOT
 
-class KHTBot:
-    def __init__(self):
-        self.name = "KHT AI BOT"
-        self.version = "1.0"
+products = []
 
-    def start(self):
-        print("=" * 30)
-        print(f"Welcome to {self.name}")
-        print(f"Version: {self.version}")
-        print("KHT Fashion House Management System")
-        print("=" * 30)
+def add_product():
+    name = input("Product name: ")
+    cost = float(input("Cost price: "))
+    price = float(input("Selling price: "))
 
-    def menu(self):
-        print("\n1. Product Management")
-        print("2. Order Management")
-        print("3. Profit Calculator")
-        print("4. AI Assistant")
-        print("5. Exit")
+    product = {
+        "name": name,
+        "cost": cost,
+        "price": price
+    }
+
+    products.append(product)
+    print("Product added successfully!")
+
+def show_products():
+    if not products:
+        print("No products available.")
+        return
+
+    for product in products:
+        print(
+            product["name"],
+            "| Price:", product["price"],
+            "| Profit:", product["price"] - product["cost"]
+        )
+
+def main():
+    while True:
+        print("\n=== KHT FASHION HOUSE ===")
+        print("1. Add Product")
+        print("2. Show Products")
+        print("3. Exit")
+
+        choice = input("Choose: ")
+
+        if choice == "1":
+            add_product()
+        elif choice == "2":
+            show_products()
+        elif choice == "3":
+            print("Goodbye!")
+            break
+        else:
+            print("Invalid choice!")
 
 if __name__ == "__main__":
-    bot = KHTBot()
-    bot.start()
-    bot.menu()
+    main()
