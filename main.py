@@ -1,294 +1,100 @@
-import json
 import os
+import json
+import logging
 from datetime import datetime
+from telegram import Update, ReplyKeyboardMarkup
+from telegram.ext import (
+    Application,
+    CommandHandler,
+    MessageHandler,
+    ConversationHandler,
+    ContextTypes,
+    filters,
+)
 
+logging.basicConfig(level=logging.INFO)
+logging.getLogger("httpx").setLevel(logging.WARNING)
+
+TOKEN = os.getenv("BOT_TOKEN", "")
+ADMIN_ID = int(os.getenv("ADMIN_ID", "0"))
 DATA_FILE = "kht_data.json"
 
+CATEGORY, NAME, COST, PRICE, STOCK = range(5)
+ORDER_PRODUCT, ORDER_QTY, ORDER_NAME, ORDER_PHONE, ORDER_ADDRESS = range(5, 10)
 
-class KHTFashionBot:
-    def __init__(self):
-        self.data = self.load_data()
+MENU = [
+    ["👗 အဝတ်အစား", "💄 အလှကုန်"],
+    ["🛒 ပစ္စည်းအားလုံး", "📦 ကျွန်ုပ်၏ Order"],
+    ["📞 ဆက်သွယ်ရန်"],
+]
 
-    def load_data(self):
-        if os.path.exists(DATA_FILE):
-            try:
-                with open(DATA_FILE, "r", encoding="utf-8") as f:
-                    return json.load(f)
-            except (json.JSONDecodeError, OSError):
-                pass
+ADMIN_MENU = [
+    ["➕ ပစ္စည်းထည့်ရန်", "📋 ပစ္စည်းစာရင်း"],
+    ["🛒 Order များ", "📊 အရောင်းစာရင်း"],
+    ["🏠 ပင်မ Menu"],
+]
 
-        return {"products": [], "orders": []}
 
-    def save_data(self):
-        with open(DATA_FILE, "w", encoding="utf-8") as f:
-            json.dump(
-                self.data,
-                f,
-                ensure_ascii=False,
-                indent=2
-            )
-
-    def add_product(self):
-        print("\n--- ADD PRODUCT ---")
-
-        name = input("Product name: ").strip()
-
-        if not name:
-            print("Product name is required.")
-            return
-
+def load_data():
+    if os.path.exists(DATA_FILE):
         try:
-            cost = float(input("Cost price (MMK): "))
-            price = float(input("Selling price (MMK): "))
-            stock = int(input("Stock quantity: "))
+            with open(DATA_FILE, "r", encoding="utf-8") as f:
+                data = json.load(f)
+                data.setdefault("products", [])
+                data.setdefault("orders", [])
+                return data
+        except (OSError, json.JSONDecodeError):
+            logging.exception("Could not read database")
 
-            if cost < 0 or price < 0 or stock < 0:
-                print("Values cannot be negative.")
-                return
+    return {"products": [], "orders": []}
 
-        except ValueError:
-            print("Please enter valid numbers.")
-            return
 
-        product_id = max(
-            [p["id"] for p in self.data["products"]],
-            default=0
-        ) + 1
+data = load_data()
 
-        product = {
-            "id": product_id,
-            "name": name,
-            "cost": cost,
-            "price": price,
-            "stock": stock
-        }
 
-        self.data["products"].append(product)
-        self.save_data()
+def save_data():
+    temporary = DATA_FILE + ".tmp"
+    with open(temporary, "w", encoding="utf-8") as f:
+        json.dump(data, f, ensure_ascii=False, indent=2)
+    os.replace(temporary, DATA_FILE)
 
-        print(f"Product added successfully! ID: {product_id}")
 
-    def show_products(self):
-        print("\n--- PRODUCT LIST ---")
+def is_admin(update):
+    return (
+        update.effective_user is not None
+        and ADMIN_ID != 0
+        and update.effective_user.id == ADMIN_ID
+    )
 
-        products = self.data["products"]
 
-        if not products:
-            print("No products available.")
-            return
-
-        for p in products:
-            profit = p["price"] - p["cost"]
-
-            print(
-                f'ID: {p["id"]} | {p["name"]} | '
-                f'Price: {p["price"]:,.0f} MMK | '
-                f'Stock: {p["stock"]} | '
-                f'Profit/unit: {profit:,.0f} MMK'
-            )
-
-    def create_order(self):
-        print("\n--- NEW ORDER ---")
-
-        customer = input("Customer name: ").strip()
-        if not customer:
-            print("Customer name is required.")
-            return
-
-        self.show_products()
-
-        try:
-            product_id = int(input("Product ID: "))
-            quantity = int(input("Quantity: "))
-
-            if quantity <= 0:
-                print("Quantity must be greater than zero.")
-                return
-
-        except ValueError:
-            print("Please enter valid numbers.")
-            return
-
-        product = next(
-            (
-                p for p in self.data["products"]
-                if p["id"] == product_id
-            ),
-            None
+def main_keyboard(update):
+    if is_admin(update):
+        return ReplyKeyboardMarkup(
+            ADMIN_MENU + [["👗 အဝတ်အစား", "💄 အလှကုန်"],
+                           ["🛒 ပစ္စည်းအားလုံး", "📦 ကျွန်ုပ်၏ Order"],
+                           ["📞 ဆက်သွယ်ရန်"]],
+            resize_keyboard=True,
         )
-
-        if product is None:
-            print("Product not found.")
-            return
-
-        if product["stock"] < quantity:
-            print("Not enough stock.")
-            return
-
-        total = product["price"] * quantity
-        cost = product["cost"] * quantity
-        order_id = max(
-            [o["id"] for o in self.data["orders"]],
-            default=0
-        ) + 1
-
-        order = {
-            "id": order_id,
-            "customer": customer,
-            "product_id": product_id,
-            "product": product["name"],
-            "quantity": quantity,
-            "total": total,
-            "cost": cost,
-            "status": "Pending",
-            "created_at": datetime.now().isoformat(
-                timespec="seconds"
-            )
-        }
-
-        product["stock"] -= quantity
-        self.data["orders"].append(order)
-        self.save_data()
-
-        print(f"Order #{order_id} created successfully!")
-        print(f"Total: {total:,.0f} MMK")
-        print("Status: Pending")
-
-    def show_orders(self):
-        print("\n--- ORDER LIST ---")
-
-        orders = self.data["orders"]
-
-        if not orders:
-            print("No orders available.")
-            return
-
-        for o in orders:
-            print(
-                f'Order #{o["id"]} | {o["customer"]} | '
-                f'{o["product"]} x{o["quantity"]} | '
-                f'{o["total"]:,.0f} MMK | '
-                f'Status: {o["status"]}'
-            )
-
-    def update_order(self):
-        self.show_orders()
-
-        try:
-            order_id = int(input("Order ID: "))
-        except ValueError:
-            print("Invalid order ID.")
-            return
-
-        order = next(
-            (
-                o for o in self.data["orders"]
-                if o["id"] == order_id
-            ),
-            None
-        )
-
-        if order is None:
-            print("Order not found.")
-            return
-
-        print("1. Confirm")
-        print("2. Shipped")
-        print("3. Delivered")
-        print("4. Cancel")
-
-        choice = input("Select status: ").strip()
-
-        statuses = {
-            "1": "Confirmed",
-            "2": "Shipped",
-            "3": "Delivered",
-            "4": "Cancelled"
-        }
-
-        if choice not in statuses:
-            print("Invalid selection.")
-            return
-
-        new_status = statuses[choice]
-
-        if order["status"] == "Cancelled":
-            print("This order was already cancelled.")
-            return
-
-        if new_status == "Cancelled":
-            product = next(
-                (
-                    p for p in self.data["products"]
-                    if p["id"] == order["product_id"]
-                ),
-                None
-            )
-
-            if product:
-                product["stock"] += order["quantity"]
-
-        order["status"] = new_status
-        self.save_data()
-
-        print(f"Order #{order_id}: {new_status}")
-
-    def show_profit(self):
-        orders = [
-            o for o in self.data["orders"]
-            if o["status"] == "Delivered"
-        ]
-
-        revenue = sum(o["total"] for o in orders)
-        cost = sum(o["cost"] for o in orders)
-        profit = revenue - cost
-
-        print("\n--- BUSINESS SUMMARY ---")
-        print(f"Products: {len(self.data['products'])}")
-        print(f"Total orders: {len(self.data['orders'])}")
-        print(f"Delivered sales: {revenue:,.0f} MMK")
-        print(f"Product cost: {cost:,.0f} MMK")
-        print(f"Gross profit: {profit:,.0f} MMK")
-        print(
-            "Note: Delivery fees and other expenses "
-            "are not included."
-        )
-
-    def run(self):
-        while True:
-            print("\n" + "=" * 32)
-            print("   KHT FASHION HOUSE BOT")
-            print("=" * 32)
-            print("1. Add product")
-            print("2. Show products")
-            print("3. Create order")
-            print("4. Show orders")
-            print("5. Update order status")
-            print("6. Business summary")
-            print("0. Exit")
-
-            choice = input("Choose an option: ").strip()
-
-            actions = {
-                "1": self.add_product,
-                "2": self.show_products,
-                "3": self.create_order,
-                "4": self.show_orders,
-                "5": self.update_order,
-                "6": self.show_profit
-            }
-
-            if choice == "0":
-                print("KHT Bot stopped.")
-                break
-
-            action = actions.get(choice)
-
-            if action:
-                action()
-            else:
-                print("Invalid option. Try again.")
+    return ReplyKeyboardMarkup(MENU, resize_keyboard=True)
 
 
-if __name__ == "__main__":
-    KHTFashionBot().run()
+async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    await update.message.reply_text(
+        "🏪 KHT Fashion House မှ ကြိုဆိုပါတယ်။\n\n"
+        "👗 အဝတ်အစားနှင့် 💄 အလှကုန်များကို "
+        "ဒီ Bot မှာ ကြည့်ရှုပြီး မှာယူနိုင်ပါတယ်။",
+        reply_markup=main_keyboard(update),
+    )
+
+
+async def show_products(update, context, category=None):
+    products = [
+        p for p in data["products"]
+        if category is None or p.get("category") == category
+    ]
+
+    if not products:
+        await update.message.reply_text("လောလောဆယ် ပစ္စည်းမရှိသေးပါ။")
+        return
+
+    for
